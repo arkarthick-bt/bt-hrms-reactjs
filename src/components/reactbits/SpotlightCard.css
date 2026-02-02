@@ -1,0 +1,22 @@
+.spotlight-card {
+    position: relative;
+    border-radius: 1.5rem;
+    border: 1px solid var(--bonton-gray-200);
+    background-color: var(--bonton-white);
+    overflow: hidden;
+    transition: box-shadow 0.3s ease;
+}
+
+.spotlight-card-spotlight {
+    position: absolute;
+    inset: 0px;
+    pointer-events: none;
+    transition: opacity 0.5s;
+    z-index: 1;
+}
+
+.spotlight-card-content {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+}
