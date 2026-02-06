@@ -10,11 +10,20 @@ export const API_ENDPOINTS = {
         REFRESH_TOKEN: '/auth/refresh',
     },
     EMPLOYEES: {
-        LIST: '/employees',
-        GET: '/employees/:id',
+        LIST: '/employees/getEmployee',
+        GET: '/employees/getEmployee/:id',
         CREATE: '/employees',
         UPDATE: '/employees/:id',
         DELETE: '/employees/:id',
+        ONBOARDING_INITIATE: '/employees/initiateOnboarding',
+        ONBOARDING_UPDATE: '/employees/updateOnboarding',
+        INTERN_REGISTER: '/employees/registerIntern',
+        UPSERT_ADDON: '/employees/upsertAddon',
+    },
+    INTERNS: {
+        LIST: '/interns',
+        GET: '/interns/:id',
+        REGISTER: '/interns/register',
     },
     ATTENDANCE: {
         LIST: '/attendance',
@@ -30,6 +39,13 @@ export const API_ENDPOINTS = {
         LIST: '/roles/getRole',
         GET_PERMISSIONS: '/roles/getPermission/:roleId',
         ASSIGN_PERMISSIONS: '/roles/assignPermission',
+    },
+    MASTERS: '/masters',
+    DASHBOARD: {
+        SUMMARY: '/dashboard/summary',
+        WORKFORCE: '/dashboard/workforce-dist',
+        EVENTS: '/dashboard/events',
+        RECRUITMENT: '/dashboard/recruitment-stats',
     },
 };
 

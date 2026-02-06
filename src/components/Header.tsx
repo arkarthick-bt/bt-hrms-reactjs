@@ -80,7 +80,7 @@ const Header: React.FC = () => {
     const currentTheme = themes.find(t => t.id === theme) || themes[0];
 
     return (
-        <CHeader position="sticky" className="elegant-header mb-4 p-0">
+        <CHeader position="sticky" className="elegant-header mb-4">
             <CContainer fluid className="px-4">
                 <CHeaderNav className="d-flex align-items-center me-auto">
                     {/* Logo */}
@@ -102,7 +102,7 @@ const Header: React.FC = () => {
 
                     {/* Home Button */}
                     <CNavItem className="me-3 d-none d-md-block">
-                        <CTooltip content="Dashboard">
+                        <CTooltip content="Home">
                             <CButton 
                                 variant="ghost" 
                                 onClick={() => navigate('/')}

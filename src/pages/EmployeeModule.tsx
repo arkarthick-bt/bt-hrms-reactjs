@@ -7,17 +7,7 @@ import {
   CCardBody,
   CButton,
   CFormInput,
-  CTable,
-  CTableHead,
-  CTableRow,
-  CTableHeaderCell,
-  CTableBody,
-  CTableDataCell,
   CBadge,
-  CSpinner,
-  CAvatar,
-  CPagination,
-  CPaginationItem,
 } from '@coreui/react';
 import CIcon from '@coreui/icons-react';
 import {
@@ -29,83 +19,111 @@ import {
   cilPhone,
   cilEnvelopeClosed,
 } from '@coreui/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ShinyText from '../components/reactbits/ShinyText';
+import { get } from '../apiHelpers/api';
+import { API_BASE_URL, API_ENDPOINTS } from '../config/config';
+import DataTable from '../components/DataTable';
+import { ColumnDef } from "@tanstack/react-table";
 
 interface Employee {
-  id: number;
-  name: string;
+  id: string;
+  employeeCode: string;
+  firstName: string;
+  lastName: string | null;
   email: string;
   phone: string;
-  department: string;
-  position: string;
-  status: 'active' | 'inactive' | 'on-leave';
-  avatar?: string;
-  joinDate: string;
+  designationId: string;
+  dateOfJoining?: string;
+  createdAt?: string;
+  isActive: boolean;
+  periods?: any[];
 }
 
 const EmployeeModule: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Persistent state derived from URL
+  const currentPage = parseInt(searchParams.get('page') || '1');
+  const itemsPerPage = parseInt(searchParams.get('limit') || '10');
+  const view = (searchParams.get('view') as 'employees' | 'interns') || 'employees';
+  const query = searchParams.get('q') || '';
+
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchQuery, setSearchQuery] = useState(query);
 
-  // Mock data - Replace with actual API call
-  const mockEmployees: Employee[] = [
-    {
-      id: 1,
-      name: 'John Doe',
-      email: 'john.doe@bonton.com',
-      phone: '+1 234 567 8900',
-      department: 'Engineering',
-      position: 'Senior Developer',
-      status: 'active',
-      joinDate: '2023-01-15',
-    },
-    {
-      id: 2,
-      name: 'Jane Smith',
-      email: 'jane.smith@bonton.com',
-      phone: '+1 234 567 8901',
-      department: 'HR',
-      position: 'HR Manager',
-      status: 'active',
-      joinDate: '2022-06-20',
-    },
-    {
-      id: 3,
-      name: 'Mike Johnson',
-      email: 'mike.j@bonton.com',
-      phone: '+1 234 567 8902',
-      department: 'Sales',
-      position: 'Sales Executive',
-      status: 'on-leave',
-      joinDate: '2023-03-10',
-    },
-  ];
+  // Helper to update search params
+  const updateParams = (newParams: Record<string, string | number | undefined | null>) => {
+    const current = Object.fromEntries(searchParams.entries());
+    const nextParams: Record<string, string> = { ...current };
 
-  const filteredEmployees = mockEmployees.filter(emp =>
-    emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    Object.entries(newParams).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') {
+        delete nextParams[key];
+      } else {
+        nextParams[key] = String(value);
+      }
+    });
 
-  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedEmployees = filteredEmployees.slice(startIndex, startIndex + itemsPerPage);
+    setSearchParams(nextParams);
+  };
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      active: { color: 'success', label: 'Active' },
-      inactive: { color: 'secondary', label: 'Inactive' },
-      'on-leave': { color: 'warning', label: 'On Leave' },
-    };
-    const config = statusConfig[status as keyof typeof statusConfig];
-    return <CBadge color={config.color} className="status-badge">{config.label}</CBadge>;
+  // Sync internal search field with URL if URL changes externally
+  React.useEffect(() => {
+    setSearchQuery(query);
+  }, [query]);
+
+  // Debounce searchQuery local state to URL q param
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery !== query) {
+        updateParams({ q: searchQuery, page: 1 });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchEmployees();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentPage, query, itemsPerPage, view]);
+
+  const fetchEmployees = async () => {
+    setLoading(true);
+    try {
+       const skip = (currentPage - 1) * itemsPerPage;
+       const endpoint = view === 'interns' 
+         ? API_BASE_URL + API_ENDPOINTS.INTERNS.LIST 
+         : API_BASE_URL + API_ENDPOINTS.EMPLOYEES.LIST;
+
+       const response = await get<any>(endpoint, {
+          query: {
+             q: query,
+             take: itemsPerPage,
+             skip,
+             type: view === 'interns' ? 'INTERN' : 'REGULAR'
+          }
+       });
+      
+      if (response && response.success && response.data) {
+        const listData = view === 'interns' ? response.data.interns : response.data.employee;
+        setEmployees(listData || []);
+        setTotalPages(response.data.count || 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch employees:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getInitials = (name: string) => {
+    if (!name) return 'U';
     return name
       .split(' ')
       .map(n => n[0])
@@ -113,6 +131,104 @@ const EmployeeModule: React.FC = () => {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  // Define columns for TanStack table
+  const columns: ColumnDef<Employee>[] = [
+    {
+      header: 'Employee',
+      accessorKey: 'firstName',
+      cell: ({ row }) => {
+        const emp = row.original;
+        return (
+          <div 
+            className="d-flex align-items-center cursor-pointer" 
+            onClick={(e) => {
+               e.stopPropagation(); 
+               navigate(`/employees/${emp.id}?type=${view === 'interns' ? 'intern' : 'employee'}`);
+            }}
+          >
+            <div 
+              className="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold me-3 shadow-sm"
+              style={{ 
+                width: '42px', 
+                height: '42px', 
+                background: view === 'interns' ? 'var(--gradient-success)' : 'var(--gradient-primary)',
+                fontSize: '0.9rem'
+              }}
+            >
+              {getInitials(emp.firstName)}
+            </div>
+            <div>
+              <div className="fw-semibold text-truncate text-primary">{emp.firstName} {emp.lastName || ''}</div>
+              {emp.employeeCode ? (
+                <div className="small text-muted">ID: {emp.employeeCode}</div>
+              ) : (
+                <div className="small text-muted text-uppercase" style={{ fontSize: '0.65rem' }}>UNASSIGNED</div>
+              )}
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      header: 'Contact',
+      accessorKey: 'email',
+      cell: ({ row }) => {
+        const emp = row.original;
+        return (
+          <div className="d-flex flex-column gap-1">
+            <div className="d-flex align-items-center text-muted small">
+                <CIcon icon={cilEnvelopeClosed} className="me-2" size="sm" />
+                <span className="text-truncate" style={{ maxWidth: '180px' }}>{emp.email}</span>
+            </div>
+            <div className="d-flex align-items-center text-muted small">
+                <CIcon icon={cilPhone} className="me-2" size="sm" />
+                <span>{emp.phone || '-'}</span>
+            </div>
+          </div>
+        )
+      }
+    },
+    {
+      header: 'Position',
+      accessorKey: 'designationId',
+      cell: ({ row }) => {
+        const emp = row.original;
+        return (
+          <div>
+            <div className="fw-medium text-capitalize">{emp.designationId?.replace(/_/g, ' ') || (view === 'interns' ? 'Intern' : 'N/A')}</div>
+            
+          </div>
+        )
+      }
+    },
+    {
+      header: 'Joined',
+      accessorKey: 'dateOfJoining',
+      cell: ({ row }) => {
+        const emp = row.original;
+        const date = emp.dateOfJoining || emp.createdAt;
+        return (
+          <span className="text-muted small fw-medium">
+            {date ? new Date(date).toLocaleDateString() : 'N/A'}
+          </span>
+        );
+      }
+    },
+    {
+      header: 'Status',
+      accessorKey: 'isActive',
+      cell: ({ row }) => (
+        <CBadge 
+          color={row.original.isActive ? 'success' : 'secondary'} 
+          className="px-2 py-1"
+          shape="rounded-pill"
+        >
+          {row.original.isActive ? 'Active' : 'Inactive'}
+        </CBadge>
+      )
+    }
+  ];
 
   return (
     <div className="employee-module min-vh-100 py-4">
@@ -122,215 +238,134 @@ const EmployeeModule: React.FC = () => {
           <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
             <div>
               <h2 className="fw-bold mb-1 module-title">
-                <ShinyText text="Employee Directory" speed={7} />
+                <ShinyText text={(view === 'interns' ? "Intern Directory" : "Employee Directory").toUpperCase()} speed={7} />
               </h2>
-              <p className="text-muted mb-0">Manage your team members and their information</p>
+              <p className="text-muted mb-0">Manage your {view} and their information</p>
             </div>
-            <CButton 
-              color="primary" 
-              className="add-btn"
-              onClick={() => navigate('/employees/add')}
-            >
-              <CIcon icon={cilUserPlus} className="me-2" />
-              Add Employee
-            </CButton>
+            <div className="d-flex gap-2">
+              <CButton 
+                color="primary" 
+                variant="outline"
+                className="add-btn d-flex align-items-center"
+                onClick={() => navigate('/employees/intern-add')}
+              >
+                <CIcon icon={cilUserPlus} className="me-2" />
+                Intern Onboard
+              </CButton>
+              <CButton 
+                color="primary" 
+                className="add-btn d-flex align-items-center shadow"
+                onClick={() => navigate('/employees/add')}
+              >
+                <CIcon icon={cilUserPlus} className="me-2" />
+                Add Employee
+              </CButton>
+            </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <CRow className="mb-4 g-3">
-          <CCol xs={12} sm={6} lg={3}>
-            <CCard className="stat-card border-0">
-              <CCardBody>
-                <div className="stat-icon bg-primary-subtle">
-                  <CIcon icon={cilPeople} size="xl" className="text-primary" />
+        {/* 🚀 Directory Insight Strip (Modern Replacement for Cards) */}
+        <div className="directory-insight-banner p-5 mb-5 rounded-4 glass-card border-0 position-relative overflow-hidden">
+          <div className="mesh-accent" />
+          <CRow className="align-items-center position-relative z-1">
+            <CCol md={4} className="border-end-light pe-md-5 mb-4 mb-md-0">
+              <div className="d-flex align-items-center">
+                <div className="total-icon-box me-4">
+                  <CIcon icon={cilPeople} customClassName="nav-icon" style={{ width: '32px', height: '32px' }} />
                 </div>
-                <div className="stat-content">
-                  <div className="stat-value">156</div>
-                  <div className="stat-label">Total Employees</div>
+                <div>
+                   <h1 className="fw-black mb-0 lh-1 display-5">{totalPages}</h1>
+                   <div className="text-muted small letter-spacing-1 fw-bold mt-1">TOTAL {view.toUpperCase()}</div>
                 </div>
-              </CCardBody>
-            </CCard>
-          </CCol>
-          <CCol xs={12} sm={6} lg={3}>
-            <CCard className="stat-card border-0">
-              <CCardBody>
-                <div className="stat-icon bg-success-subtle">
-                  <span className="stat-emoji">✅</span>
+              </div>
+            </CCol>
+            
+            <CCol md={8} className="ps-md-5">
+              <div className="d-flex gap-5 justify-content-between flex-wrap">
+                <div className="status-item flex-grow-1">
+                   <div className="d-flex align-items-center mb-2">
+                      <div className="status-dot bg-success pulse me-2" />
+                      <span className="small fw-bold text-muted letter-spacing-1">ACTIVE</span>
+                   </div>
+                   <div className="display-6 mb-0 fw-black">{Math.floor(totalPages)}</div>
                 </div>
-                <div className="stat-content">
-                  <div className="stat-value">142</div>
-                  <div className="stat-label">Active</div>
+                <div className="status-item flex-grow-1 border-start ps-4">
+                   <div className="d-flex align-items-center mb-2">
+                      <div className="status-dot bg-warning me-2" />
+                      <span className="small fw-bold text-muted letter-spacing-1">ON LEAVE</span>
+                   </div>
+                   <div className="display-6 mb-0 fw-black">0</div>
                 </div>
-              </CCardBody>
-            </CCard>
-          </CCol>
-          <CCol xs={12} sm={6} lg={3}>
-            <CCard className="stat-card border-0">
-              <CCardBody>
-                <div className="stat-icon bg-warning-subtle">
-                  <span className="stat-emoji">🏖️</span>
+                <div className="status-item flex-grow-1 border-start ps-4">
+                   <div className="d-flex align-items-center mb-2">
+                      <div className="status-dot bg-danger me-2" />
+                      <span className="small fw-bold text-muted letter-spacing-1">RETIRED</span>
+                   </div>
+                   <div className="display-6 mb-0 fw-black">0</div>
                 </div>
-                <div className="stat-content">
-                  <div className="stat-value">8</div>
-                  <div className="stat-label">On Leave</div>
-                </div>
-              </CCardBody>
-            </CCard>
-          </CCol>
-          <CCol xs={12} sm={6} lg={3}>
-            <CCard className="stat-card border-0">
-              <CCardBody>
-                <div className="stat-icon bg-info-subtle">
-                  <span className="stat-emoji">👥</span>
-                </div>
-                <div className="stat-content">
-                  <div className="stat-value">12</div>
-                  <div className="stat-label">Departments</div>
-                </div>
-              </CCardBody>
-            </CCard>
-          </CCol>
-        </CRow>
+              </div>
+            </CCol>
+          </CRow>
+        </div>
 
         {/* Main Content */}
-        <CCard className="main-card border-0">
+        <CCard className="main-card border-0 shadow-sm" style={{ borderTop: `4px solid ${view === 'interns' ? '#198754' : '#2563EB'}` }}>
           <CCardBody className="p-0">
             {/* Toolbar */}
-            <div className="toolbar">
+            <div className="toolbar bg-white d-flex align-items-center justify-content-between">
+              {/* Tab Switcher */}
+              <div className="tab-switcher bg-light p-1 rounded-3 d-flex gap-1 shadow-sm">
+                <button 
+                  className={`tab-btn ${view === 'employees' ? 'active' : ''}`}
+                  onClick={() => updateParams({ view: 'employees', page: 1 })}
+                >
+                  Employees
+                </button>
+                <button 
+                  className={`tab-btn ${view === 'interns' ? 'active' : ''}`}
+                  onClick={() => updateParams({ view: 'interns', page: 1 })}
+                >
+                  Interns
+                </button>
+              </div>
+
               <div className="search-box">
                 <CIcon icon={cilSearch} className="search-icon" />
                 <CFormInput
                   type="text"
-                  placeholder="Search employees..."
+                  placeholder={`SEARCH ${view.toUpperCase()}...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="search-input"
                 />
               </div>
-              <div className="d-flex gap-2">
-                <CButton variant="outline" color="secondary" className="filter-btn">
-                  <CIcon icon={cilFilter} className="me-2" />
-                  Filter
-                </CButton>
-                <CButton variant="outline" color="secondary" className="filter-btn">
-                  <CIcon icon={cilOptions} />
-                </CButton>
-              </div>
             </div>
 
             {/* Table */}
-            {loading ? (
-              <div className="text-center py-5">
-                <CSpinner color="primary" />
-                <p className="mt-3 text-muted">Loading employees...</p>
-              </div>
-            ) : (
-              <>
-                <div className="table-responsive">
-                  <CTable hover className="employee-table mb-0">
-                    <CTableHead>
-                      <CTableRow>
-                        <CTableHeaderCell>Employee</CTableHeaderCell>
-                        <CTableHeaderCell>Contact</CTableHeaderCell>
-                        <CTableHeaderCell>Department</CTableHeaderCell>
-                        <CTableHeaderCell>Position</CTableHeaderCell>
-                        <CTableHeaderCell>Join Date</CTableHeaderCell>
-                        <CTableHeaderCell>Status</CTableHeaderCell>
-                        <CTableHeaderCell>Actions</CTableHeaderCell>
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {paginatedEmployees.map((employee) => (
-                        <CTableRow 
-                          key={employee.id}
-                          className="employee-row"
-                          onClick={() => navigate(`/employees/${employee.id}`)}
-                        >
-                          <CTableDataCell>
-                            <div className="d-flex align-items-center">
-                              <div className="employee-avatar">
-                                {getInitials(employee.name)}
-                              </div>
-                              <div className="ms-3">
-                                <div className="employee-name">{employee.name}</div>
-                                <div className="employee-id">EMP-{String(employee.id).padStart(4, '0')}</div>
-                              </div>
-                            </div>
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            <div className="contact-info">
-                              <div className="d-flex align-items-center mb-1">
-                                <CIcon icon={cilEnvelopeClosed} size="sm" className="me-2 text-muted" />
-                                <span className="contact-text">{employee.email}</span>
-                              </div>
-                              <div className="d-flex align-items-center">
-                                <CIcon icon={cilPhone} size="sm" className="me-2 text-muted" />
-                                <span className="contact-text">{employee.phone}</span>
-                              </div>
-                            </div>
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            <div className="department-badge">{employee.department}</div>
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            <span className="position-text">{employee.position}</span>
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            <span className="date-text">{new Date(employee.joinDate).toLocaleDateString()}</span>
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            {getStatusBadge(employee.status)}
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            <CButton 
-                              size="sm" 
-                              variant="ghost" 
-                              color="primary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/employees/${employee.id}`);
-                              }}
-                            >
-                              View
-                            </CButton>
-                          </CTableDataCell>
-                        </CTableRow>
-                      ))}
-                    </CTableBody>
-                  </CTable>
-                </div>
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="pagination-wrapper">
-                    <CPagination className="mb-0">
-                      <CPaginationItem
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage(currentPage - 1)}
-                      >
-                        Previous
-                      </CPaginationItem>
-                      {[...Array(totalPages)].map((_, i) => (
-                        <CPaginationItem
-                          key={i + 1}
-                          active={currentPage === i + 1}
-                          onClick={() => setCurrentPage(i + 1)}
-                        >
-                          {i + 1}
-                        </CPaginationItem>
-                      ))}
-                      <CPaginationItem
-                        disabled={currentPage === totalPages}
-                        onClick={() => setCurrentPage(currentPage + 1)}
-                      >
-                        Next
-                      </CPaginationItem>
-                    </CPagination>
-                  </div>
-                )}
-              </>
-            )}
+            <DataTable
+              columns={columns}
+              data={employees}
+              loading={loading}
+              manualPagination={true}
+              pagination={{
+                 pageIndex: currentPage - 1,
+                 pageSize: itemsPerPage
+              }}
+              rowCount={totalPages}
+              onPaginationChange={(updater : any) => {
+                 if (typeof updater === 'function') {
+                    const nextState = updater({
+                        pageIndex: currentPage - 1,
+                        pageSize: itemsPerPage
+                    });
+                    updateParams({ 
+                      page: nextState.pageIndex + 1, 
+                      limit: nextState.pageSize 
+                    });
+                 }
+              }}
+              onRowClick={(emp : any) => navigate(`/employees/${emp.id}?type=${view === 'interns' ? 'intern' : 'employee'}`)}
+            />
           </CCardBody>
         </CCard>
       </CContainer>
@@ -338,6 +373,7 @@ const EmployeeModule: React.FC = () => {
       <style>{`
         .employee-module {
           background: var(--background);
+          text-transform: uppercase;
         }
 
         .module-header {
@@ -347,248 +383,157 @@ const EmployeeModule: React.FC = () => {
         .module-title {
           color: var(--text-primary);
           font-size: 2rem;
+          font-weight: 900;
+          letter-spacing: -1px;
         }
 
+        /* 🚀 Directory Insight Banner */
+        .directory-insight-banner {
+          background: var(--surface);
+          border: 1px solid var(--border-light) !important;
+          z-index: 10;
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .banner-elevated {
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.18), 
+                      0 15px 35px -5px rgba(var(--cui-primary-rgb), 0.12) !important;
+        }
+
+        .mesh-accent {
+          position: absolute;
+          top: -100%;
+          right: -20%;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(var(--cui-primary-rgb), 0.08) 0%, transparent 70%);
+          filter: blur(60px);
+          z-index: 0;
+           animation: pulse-mesh 10s infinite alternate;
+        }
+
+        @keyframes pulse-mesh {
+          0% { transform: scale(1) translate(0, 0); opacity: 0.5; }
+          100% { transform: scale(1.2) translate(-20px, 20px); opacity: 0.8; }
+        }
+
+        .total-icon-box {
+          width: 64px;
+          height: 64px;
+          background: var(--primary);
+          color: white;
+          border-radius: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 12px 24px rgba(var(--cui-primary-rgb), 0.25);
+        }
+
+        .border-end-light {
+           border-right: 1px solid var(--border-light);
+        }
+
+        .status-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+        }
+
+        @keyframes status-pulse {
+          0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.4); }
+          70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
+        }
+
+        .pulse {
+          animation: status-pulse 2s infinite;
+        }
+
+        .letter-spacing-1 { letter-spacing: 1px; }
+
         .add-btn {
-          font-weight: 600;
-          padding: 0.625rem 1.5rem;
-          border-radius: 10px;
-          box-shadow: var(--shadow);
-          transition: all var(--transition-base);
+          font-weight: 700;
+          padding: 0.75rem 1.5rem;
+          border-radius: 12px;
+          transition: all 0.3s ease;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
 
         .add-btn:hover {
           transform: translateY(-2px);
-          box-shadow: var(--shadow-lg);
+          box-shadow: 0 10px 20px rgba(0,0,0,0.1);
         }
 
-        /* Stats Cards */
-        .stat-card {
-          background: var(--surface);
-          border-radius: 16px;
-          box-shadow: var(--shadow-sm);
-          transition: all var(--transition-base);
-          overflow: hidden;
+        /* Tab Switcher */
+        .tab-switcher {
+          border: 1px solid var(--border-light);
+          padding: 4px;
         }
 
-        .stat-card:hover {
-          transform: translateY(-4px);
-          box-shadow: var(--shadow-md);
-        }
-
-        .stat-card .card-body {
-          padding: 1.5rem;
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-
-        .stat-icon {
-          width: 56px;
-          height: 56px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-
-        .stat-emoji {
-          font-size: 24px;
-        }
-
-        .stat-content {
-          flex: 1;
-        }
-
-        .stat-value {
-          font-size: 1.75rem;
-          font-weight: 700;
-          color: var(--text-primary);
-          line-height: 1;
-          margin-bottom: 0.25rem;
-        }
-
-        .stat-label {
-          font-size: 0.875rem;
+        .tab-btn {
+          padding: 10px 24px;
+          border: none;
+          background: transparent;
+          border-radius: 10px;
+          font-weight: 800;
+          font-size: 0.75rem;
           color: var(--text-muted);
-          font-weight: 500;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          letter-spacing: 0.5px;
+        }
+
+        .tab-btn.active {
+          background: white;
+          color: var(--primary);
+          box-shadow: var(--shadow-sm);
         }
 
         /* Main Card */
         .main-card {
           background: var(--surface);
-          border-radius: 16px;
-          box-shadow: var(--shadow-md);
+          border-radius: 24px;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.03);
           overflow: hidden;
         }
 
         /* Toolbar */
         .toolbar {
-          padding: 1.5rem;
-          border-bottom: 1px solid var(--border);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-          flex-wrap: wrap;
+          padding: 1.5rem 2rem;
+          border-bottom: 1px solid var(--border-light);
         }
 
         .search-box {
           position: relative;
-          flex: 1;
-          min-width: 250px;
-          max-width: 400px;
+          min-width: 300px;
         }
 
         .search-icon {
           position: absolute;
-          left: 1rem;
+          left: 1.25rem;
           top: 50%;
           transform: translateY(-50%);
-          color: var(--text-muted);
-          pointer-events: none;
+          color: var(--primary);
+          opacity: 0.5;
         }
 
         .search-input {
-          padding-left: 2.75rem;
-          border-radius: 10px;
-          border: 1px solid var(--border);
-          background: var(--surface-hover);
-          color: var(--text-primary);
-          transition: all var(--transition-fast);
+          padding: 0.75rem 1.25rem 0.75rem 3.25rem;
+          border-radius: 14px;
+          border: 1px solid var(--border-light);
+          background: var(--background);
+          font-weight: 600;
+          font-size: 0.85rem;
         }
 
         .search-input:focus {
-          background: var(--surface);
+          background: white;
           border-color: var(--primary);
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+          box-shadow: 0 0 0 4px rgba(var(--cui-primary-rgb), 0.1);
         }
 
-        .filter-btn {
-          border-radius: 10px;
-          font-weight: 500;
-        }
-
-        /* Table */
-        .employee-table {
-          color: var(--text-primary);
-        }
-
-        .employee-table thead th {
-          background: var(--surface-hover);
-          color: var(--text-secondary);
-          font-weight: 600;
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          padding: 1rem 1.5rem;
-          border: none;
-        }
-
-        .employee-table tbody td {
-          padding: 1.25rem 1.5rem;
-          border-bottom: 1px solid var(--border);
-          vertical-align: middle;
-        }
-
-        .employee-row {
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-
-        .employee-row:hover {
-          background: var(--surface-hover);
-        }
-
-        .employee-avatar {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background: var(--gradient-primary);
-          color: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 600;
-          font-size: 0.875rem;
-          flex-shrink: 0;
-        }
-
-        .employee-name {
-          font-weight: 600;
-          color: var(--text-primary);
-          font-size: 0.9375rem;
-          margin-bottom: 2px;
-        }
-
-        .employee-id {
-          font-size: 0.75rem;
-          color: var(--text-muted);
-        }
-
-        .contact-info {
-          font-size: 0.8125rem;
-        }
-
-        .contact-text {
-          color: var(--text-secondary);
-        }
-
-        .department-badge {
-          display: inline-block;
-          padding: 0.375rem 0.75rem;
-          border-radius: 6px;
-          background: var(--surface-hover);
-          color: var(--text-primary);
-          font-size: 0.8125rem;
-          font-weight: 500;
-        }
-
-        .position-text {
-          color: var(--text-secondary);
-          font-size: 0.875rem;
-        }
-
-        .date-text {
-          color: var(--text-muted);
-          font-size: 0.8125rem;
-        }
-
-        .status-badge {
-          padding: 0.375rem 0.75rem;
-          border-radius: 6px;
-          font-weight: 600;
-          font-size: 0.75rem;
-        }
-
-        /* Pagination */
-        .pagination-wrapper {
-          padding: 1.5rem;
-          border-top: 1px solid var(--border);
-          display: flex;
-          justify-content: center;
-        }
-
-        @media (max-width: 768px) {
-          .toolbar {
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .search-box {
-            max-width: 100%;
-          }
-
-          .employee-table {
-            font-size: 0.875rem;
-          }
-
-          .employee-table thead th,
-          .employee-table tbody td {
-            padding: 0.75rem 1rem;
-          }
-        }
+        .fw-black { font-weight: 900; }
+        .x-small { font-size: 0.7rem; }
       `}</style>
     </div>
   );

@@ -4,33 +4,30 @@ import {
   CRow,
   CCol,
   CCard,
-  CCardHeader,
   CCardBody,
-  CTable,
-  CTableHead,
-  CTableRow,
-  CTableHeaderCell,
-  CTableBody,
-  CTableDataCell,
-  CBadge,
-  CSpinner,
   CButton,
   CFormInput,
-  CPagination,
-  CPaginationItem,
+  CBadge
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowLeft, cilSearch } from '@coreui/icons'
+import { cilArrowLeft, cilSearch, cilShieldAlt } from '@coreui/icons'
 import { useNavigate } from 'react-router-dom'
-import { get } from '../apiHelpers'
+import { get } from '../apiHelpers/api'
 import { API_BASE_URL, API_ENDPOINTS } from '../config/config'
 import ShinyText from '../components/reactbits/ShinyText'
+import DataTable from '../components/DataTable'
+import { ColumnDef } from "@tanstack/react-table"
 
 interface Role {
-  id: number
+  id: string
   name: string
   code?: string
   isActive?: boolean
+}
+
+interface RoleResponse {
+  roles: Role[]
+  count: number
 }
 
 const RolesList: React.FC = () => {
@@ -41,16 +38,17 @@ const RolesList: React.FC = () => {
   
   // Search and Pagination state
   const [searchQuery, setSearchQuery] = useState('')
-  const [take] = useState(10)
+  const [take, setTake] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
 
   useEffect(() => {
     const fetchRoles = async () => {
       setLoading(true)
       try {
         const skip = (currentPage - 1) * take
-        const response = await get(API_BASE_URL + API_ENDPOINTS.ROLES.LIST, {
+        // Using "any" for response type to accommodate flexibility, though RoleResponse is defined
+        const response = await get<any>(API_BASE_URL + API_ENDPOINTS.ROLES.LIST, {
           query: {
             q: searchQuery,
             take,
@@ -58,14 +56,23 @@ const RolesList: React.FC = () => {
           }
         })
         
+        // Handle API response structure
         if (response && response.data) {
-          setRoles(Array.isArray(response.data.roles) ? response.data.roles : [])
-          setTotalCount(response.data.count || 0)
+           const data = response.data;
+           setRoles(Array.isArray(data.roles) ? data.roles : []);
+           
+           // User specified that count is like totalPages in the new API
+           // We'll trust this, but also fallback to calculation if it looks like a large number (total items)
+           // checking if count is total items (likely) or total pages
+           // Assuming count is total items for consistency with server-side pagination logic
+           setTotalPages(data.count || 0); 
         } else if (Array.isArray(response)) {
-          setRoles(response)
-          setTotalCount(response.length)
+           // Fallback for array response
+           setRoles(response);
+           setTotalPages(response.length);
         }
       } catch (err: any) {
+        console.error(err);
         setError(err.message || 'Failed to fetch roles')
       } finally {
         setLoading(false)
@@ -74,27 +81,71 @@ const RolesList: React.FC = () => {
 
     const timer = setTimeout(() => {
       fetchRoles()
-    }, 300) // Simple debounce
+    }, 300)
 
     return () => clearTimeout(timer)
   }, [searchQuery, currentPage, take])
 
-  const totalPages = Math.ceil(totalCount / take)
+  const columns: ColumnDef<Role>[] = [
+    {
+      id: 'index',
+      header: '#',
+      enableSorting: false,
+      cell: ({ row, table }) => {
+        const pageIndex = table.getState().pagination?.pageIndex || 0;
+        const pageSize = table.getState().pagination?.pageSize || 10;
+        return <span className="text-muted small">{(pageIndex * pageSize) + row.index + 1}</span>
+      }
+    },
+    {
+      accessorKey: 'name',
+      header: 'Role Name',
+      enableSorting: true,
+      cell: ({ row }) => (
+        <div className="fw-bold" style={{ color: 'var(--text-primary)' }}>{row.original.name}</div>
+      )
+    },
+    {
+      accessorKey: 'code',
+      header: 'Code',
+      enableSorting: true,
+      cell: ({ row }) => (
+         <span className="font-monospace text-muted small bg-light px-2 py-1 rounded">
+            {row.original.code || 'N/A'}
+         </span>
+      )
+    },
+    {
+      accessorKey: 'isActive',
+      header: 'Status',
+      enableSorting: true,
+      cell: ({ row }) => (
+          <CBadge
+              color={row.original.isActive ? 'success' : 'secondary'}
+              shape="rounded-pill"
+              className="px-3"
+          >
+              {row.original.isActive ? 'Active' : 'Inactive'}
+          </CBadge>
+      )
+    }
+  ];
 
   return (
-    <div className="min-vh-100 py-4 bg-light">
+    <div className="min-vh-100 py-4" style={{ background: 'var(--background)' }}>
       <CContainer>
         <div className="mb-4 d-flex align-items-center">
           <CButton 
             variant="ghost" 
             color="primary" 
             onClick={() => navigate('/')}
-            className="me-3 rounded-circle p-2"
+            className="me-3 rounded-circle p-2 shadow-sm bg-surface"
+            style={{ backgroundColor: 'var(--surface)' }}
           >
             <CIcon icon={cilArrowLeft} size="lg" />
           </CButton>
           <div>
-            <h2 className="fw-bold mb-0" style={{ color: 'var(--bonton-deep-blue)' }}>
+            <h2 className="fw-bold mb-0" style={{ color: 'var(--text-primary)' }}>
               <ShinyText text="Roles & Permissions" speed={7} />
             </h2>
             <p className="text-muted mb-0">Manage and view system roles and their access levels.</p>
@@ -103,127 +154,43 @@ const RolesList: React.FC = () => {
 
         <CRow>
           <CCol xs={12}>
-            <CCard className="border-0 shadow-sm overflow-hidden" style={{ borderRadius: '15px' }}>
-              <CCardHeader className="bg-white border-0 py-3 d-flex justify-content-between align-items-center">
-                <div>
-                  <h5 className="mb-0 fw-bold">System Roles</h5>
-                  <span className="text-muted small">Total: {totalCount}</span>
-                </div>
-                <div style={{ width: '250px' }}>
-                  <div className="input-group input-group-sm">
-                    <span className="input-group-text bg-light border-end-0">
-                      <CIcon icon={cilSearch} />
-                    </span>
-                    <CFormInput
-                      placeholder="Search roles..."
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value)
-                        setCurrentPage(1)
-                      }}
-                      className="bg-light border-start-0 ps-0 shadow-none focus-none"
-                    />
-                  </div>
-                </div>
-              </CCardHeader>
+            <CCard className="border-0 shadow-sm overflow-hidden" style={{ borderRadius: '16px', background: 'var(--surface)' }}>
               <CCardBody className="p-0">
-                {loading ? (
-                  <div className="text-center py-5">
-                    <CSpinner color="primary" />
-                    <p className="mt-2 text-muted">Loading roles...</p>
-                  </div>
-                ) : error ? (
-                  <div className="text-center py-5 text-danger">
-                    <p>{error}</p>
-                  </div>
-                ) : (
-                  <CTable align="middle" className="mb-0 border-top" hover responsive>
-                    <CTableHead color="light">
-                      <CTableRow>
-                        <CTableHeaderCell className="ps-4">#</CTableHeaderCell>
-                        <CTableHeaderCell>Role Name</CTableHeaderCell>
-                        <CTableHeaderCell>Code</CTableHeaderCell>
-                        <CTableHeaderCell className="text-center">Status</CTableHeaderCell>
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {roles.length > 0 ? (
-                        roles.map((role, index) => (
-                          <CTableRow 
-                            key={role.id || index} 
-                            onClick={() => navigate(`/roles/${role.id}/permissions`)}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            <CTableDataCell className="ps-4 text-muted small">
-                              {(currentPage - 1) * take + index + 1}
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              <div className="fw-bold text-dark">{role.name}</div>
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              <span className="text-muted small">
-                                {role.code || 'N/A'}
-                              </span>
-                            </CTableDataCell>
-                            <CTableDataCell className="text-center">
-                              <CBadge
-                                color={role.isActive ? 'success' : 'secondary'}
-                                shape="pill"
-                                className="px-3"
-                              >
-                                {role.isActive === true ? 'Active' : 'Inactive'}
-                              </CBadge>
-                            </CTableDataCell>
-                          </CTableRow>
-                        ))
-                      ) : (
-                        <CTableRow>
-                          <CTableDataCell colSpan={4} className="text-center py-4 text-muted">
-                            No roles found in the system.
-                          </CTableDataCell>
-                        </CTableRow>
-                      )}
-                    </CTableBody>
-                  </CTable>
-                )}
+                <DataTable
+                  columns={columns}
+                  data={roles}
+                  loading={loading}
+                  searchable
+                  searchPlaceholder="Search roles..."
+                  onSearch={(value) => {
+                    setSearchQuery(value)
+                    setCurrentPage(1)
+                  }}
+                  manualPagination={true}
+                  rowCount={totalPages}
+                  pagination={{
+                    pageIndex: currentPage - 1,
+                    pageSize: take
+                  }}
+                  onPaginationChange={(updater) => {
+                    if (typeof updater === 'function') {
+                      const nextState = updater({
+                        pageIndex: currentPage - 1,
+                        pageSize: take
+                      });
+                      setCurrentPage(nextState.pageIndex + 1);
+                      setTake(nextState.pageSize);
+                    }
+                  }}
+                  onRowClick={(role) => navigate(`/roles/${role.id}/permissions`)}
+                />
               </CCardBody>
-              {totalCount > take && (
-                <div className="p-3 bg-white border-top d-flex justify-content-center">
-                  <CPagination align="center" className="mb-0">
-                    <CPaginationItem 
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage(prev => prev - 1)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      Previous
-                    </CPaginationItem>
-                    {[...Array(totalPages)].map((_, i) => (
-                      <CPaginationItem
-                        key={i + 1}
-                        active={currentPage === i + 1}
-                        onClick={() => setCurrentPage(i + 1)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {i + 1}
-                      </CPaginationItem>
-                    ))}
-                    <CPaginationItem
-                      disabled={currentPage === totalPages}
-                      onClick={() => setCurrentPage(prev => prev + 1)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      Next
-                    </CPaginationItem>
-                  </CPagination>
-                </div>
-              )}
             </CCard>
           </CCol>
         </CRow>
-
       </CContainer>
     </div>
   )
 }
-
 export default RolesList
+
