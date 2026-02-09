@@ -44,7 +44,7 @@ const Profile: React.FC = () => {
               <ProfileCard
                 name={user?.displayName}
                 title={user?.designation || "System Administrator"}
-                handle={user?.username}
+                // handle={user?.username}
                 status="Active Now"
                 behindGlowColor="var(--primary)"
                 innerGradient="linear-gradient(145deg, var(--surface) 0%, var(--surface-hover) 100%)"
